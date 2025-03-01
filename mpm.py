@@ -1,27 +1,46 @@
 import taichi as ti
 import math
+import random
+
 ti.init(arch=ti.gpu)
 
 grid_res = 64
 grid_size = 1.0 / grid_res
+
+num_cells = grid_res * grid_res
+
 dt = 1e-3
 
 
-n = 7 
+n = 15 
 particle_count = n * n 
 
-particle_x = ti.Vector.field(3, dtype= float, shape=(particle_count, ))
-particle_v = ti.Vector.field(3, dtype= float, shape=(particle_count, ))
-particle_mass = ti.field(dtype=ti.f32, shape=(particle_count, ))
+Particle = ti.types.struct(
+    x = ti.types.vector(3, ti.f32),
+    v = ti.types.vector(3, ti.f32),
+    mass = ti.f32
+) 
 
+particles = Particle.field(shape = particle_count)
+
+Cell = ti.types.struct(
+    v = ti.types.vector(3, ti.f32),
+    mass = ti.f32
+)
+
+grid = Cell.field(shape = num_cells)
+
+ 
 @ti.kernel
-def initialise():
+def initialise():  
     for i in range(particle_count):
-        x = i % n  # 2D 변환: x 좌표
-        y = i // n  # 2D 변환: y 좌표
-        particle_x[i] = [(x - n / 2) * grid_size, (y - n / 2) * grid_size, 0.0]
-        particle_v[i] = [0, 0, 0]
-
+        x = i % n
+        y = i // n 
+        
+        particles[i].x = [ (x - n / 2) * grid_size, (y - n / 2) * grid_size, 0]
+        particles[i].v = [ ti.random() - 0.5, ti.random() - 0.5 + 2.75, 0]
+        particles[i].mass = 1.0
+          
       
 window = ti.ui.Window("MLS-MPM Simulation", (1024, 1024), vsync = True)
 canvas = window.get_canvas() 
@@ -39,8 +58,7 @@ while window.running:
         initialise() 
         current_t = 0.0
     
-    # routine 
-    
+    # routine  
     camera.position(0.0, 0.0, 3)
     camera.lookat(0.0, 0.0, 0.0)
     
@@ -48,7 +66,7 @@ while window.running:
     scene.point_light(pos=(0, 1, 2), color=(1, 1, 1))
     scene.ambient_light((0.5, 0.5, 0.5))
     
-    scene.particles(particle_x, radius= 0.01, color=(0.5, 0.42, 0.8))
+    scene.particles(particles.x, radius= 0.01, color=(0.5, 0.42, 0.8))
 
     canvas.scene(scene)
     window.show()

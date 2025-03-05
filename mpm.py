@@ -1,14 +1,8 @@
 import taichi as ti
 import math
 import random
-import numpy as np
 
 ti.init(arch=ti.gpu)
-
-vec3 = ti.math.vec3
-ivec3 = ti.math.ivec3
-vec2 = ti.math.vec2
-mat2 = ti.math.mat2
 
 grid_res = 64
 grid_size = 1.0
@@ -169,10 +163,40 @@ def G2P():# G2P
          
         p.C = B * 4.0    
         
+        B = ti.Matrix.zero(ti.f32, 2, 2)
+        
+        for gx in range(3) :
+            for gy in range(3) :
+                weight = weights[gx].x * weights[gy].y
+                 
+                cell_x = cell_idx + ti.Vector([gx - 1, gy - 1, 0.0]) 
+                cell_index = ti.cast(cell_x.y, ti.i32) * grid_res + ti.cast(cell_x.x, ti.i32)
+                
+                if cell_index < 0 or cell_index >= num_cells :
+                    continue 
+                
+                dist = (cell_x - p.x) + ti.Vector([0.5, 0.5, 0.0])
+                weighted_velocity = grid[cell_index].v * weight
+                 
+                # term = ti.Matrix([
+                #     [weighted_velocity.x * dist.x, weighted_velocity.x * dist.y], 
+                #     [weighted_velocity.y * dist.x, weighted_velocity.y * dist.y],  
+                # ]) 
+                
+                term = weighted_velocity.xy.outer_product(dist.xy)
+                
+                B += term
+                p.v += ti.Vector([weighted_velocity.x, weighted_velocity.y, 0.0])
+        
+        p.C = B * 4.0   
+        
+        #print("1:", p.v,",", prevVel[0], ",", p.v - prevVel[0])   
+         
         cell_index = ti.cast(p.x.y, ti.i32) * grid_res + ti.cast(p.x.x, ti.i32)
+        
         if cell_index >= 0 and cell_index < num_cells :
-            cell = grid[cell_index] 
-            
+            cell = grid[cell_index]
+            #print(cell.v)
             p.x += p.v * dt 
             p.x.x = ti.max(ti.min(p.x.x, right), left)
             p.x.y = ti.max(ti.min(p.x.y, top), bottom) 

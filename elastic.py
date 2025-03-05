@@ -36,15 +36,15 @@ class Cell:
     vel: vec2
     mass: ti.f32
     
-gridSize = 64
-grid_v = ti.field(dtype=vec2, shape=(gridSize, gridSize)) # vx, vy
-grid_m = ti.field(dtype=ti.f32, shape=(gridSize, gridSize)) # mass
-# particles = ti.field(dtype=Particle, shape=(4096))
+
+grid_res = 64
+cell_count = grid_res * grid_res
+grid = Cell.field( shape=(grid_res * grid_res) )
+ 
 
 num  = 64
 particle_count = num * num
-particles = Particle.field(shape=(particle_count, ))
-#grid = Cell.field(shape = (grid_res * grid_res))
+particles = Particle.field(shape=(particle_count, )) 
 visual_pos = ti.Vector.field(3, dtype=ti.f32, shape= particle_count)
 
 
@@ -52,30 +52,20 @@ debug = ti.field(dtype=vec3, shape=(1,))
 
 @ti.func
 def reset_grid():
-    grid_v.fill(0)
-    grid_m.fill(0)
-    # for i, j in grid:
-    #     grid[i, j] = vec3([0, 0, 0])
+    for i in grid:
+        grid[i].mass = 0.0
+        grid[i].vel = ti.Vector([0.0, 0.0]) 
 
 @ti.kernel
 def init_simulation():
     reset_grid()
-    
-    # init
-    # for i, j in particles:
-    #     particles[i, j].pos = vec3([gridSize/2.0 + i*0.5 - 16.0, gridSize/2.0 + j*0.5 - 16.0, 1]) 
-    #     particles[i, j].vel = vec3([0, 0, 0])
-    #     particles[i, j].mass = 1.0
-    #     particles[i, j].volume_0 = 0.0
-    #     particles[i, j].C = ti.Matrix.zero(dt=ti.f32, n=2, m=2)
-    #     particles[i, j].F = ti.Matrix.identity(dt=ti.f32, n=2)
-    #     #print("[", i , ",", j, "]", particles[i,j].pos)
+     
 
     for i in particles: 
         
         x = i % num
         y = i // num
-        particles[i].pos = vec3([gridSize/2.0 + x*0.5 - 16.0, gridSize/2.0 + y* 0.5 - 16.0, 1]) 
+        particles[i].pos = vec3([grid_res/2.0 + x*0.5 - 16.0, grid_res/2.0 + y* 0.5 - 16.0, 1]) 
         particles[i].vel = vec3([0, 0, 0])
         particles[i].mass = 1.0
         particles[i].volume_0 = 0.0
@@ -84,26 +74,7 @@ def init_simulation():
          
     
     P2G()
-    
-    # set volume_0
-    # for i, j in particles:
-    #     particle = particles[i, j]
-    #     cell_idx = ivec3([int(particle.pos.x), int(particle.pos.y), int(particle.pos.z)])
-    #     cell_diff = (particle.pos - cell_idx) - 0.5
-    #     weights = [0.5 * pow(0.5 - cell_diff, 2), 0.75 - pow(cell_diff, 2), 0.5 * pow(0.5 + cell_diff, 2)]
-
-    #     density = 0.0
-    #     for gy in ti.static(range(-1, 2)):
-    #         for gx in ti.static(range(-1, 2)):
-    #             weight = weights[gx + 1][0] * weights[gy + 1][1]
-    #             cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, cell_idx.z])
-    #             if 0 <= cell_x.x < gridSize and 0 <= cell_x.y < gridSize:
-    #                 density += grid_m[cell_x.x, cell_x.y] * weight
-
-    #     volume = particle.mass / density
-    #     particle.volume_0 = volume
-    #     particles[i, j].volume_0 = particle.volume_0
-    
+        
     for i in particles:
         particle = particles[i]
         cell_idx = ivec3([int(particle.pos.x), int(particle.pos.y), int(particle.pos.z)])
@@ -113,16 +84,17 @@ def init_simulation():
         density = 0.0
         for gy in ti.static(range(-1, 2)):
             for gx in ti.static(range(-1, 2)):
+                
                 weight = weights[gx + 1][0] * weights[gy + 1][1]
                 cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, cell_idx.z])
-                if 0 <= cell_x.x < gridSize and 0 <= cell_x.y < gridSize:
-                    density += grid_m[cell_x.x, cell_x.y] * weight
+                c_idx = cell_x.y * grid_res + cell_x.x
+                
+                if 0 <= c_idx < cell_count :
+                    density += grid[c_idx].mass  * weight
 
         volume = particle.mass / density
         particle.volume_0 = volume
         particles[i].volume_0 = particle.volume_0
-    
-        
         
 @ti.func
 def P2G():
@@ -161,81 +133,37 @@ def P2G():
                 weight = weights[gx + 1][0] * weights[gy + 1][1]
                 cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, cell_idx.z])
 
+                c_idx = cell_x.y * grid_res + cell_x.x
                 # 구역 벗어나면 particles 값이 고장남
                 # 디버깅 항상 키자
-                if 0 <= cell_x.x < gridSize and 0 <= cell_x.y < gridSize:
+                if 0 <= c_idx < cell_count: 
                     cell_dist = (cell_x - particle.pos) + 0.5
-                    # cell_dist_xy = vec2([cell_dist.x, cell_dist.y])
+                     
                     
                     Q = particle.C @ cell_dist.xy
 
                     weighted_mass = weight * particle.mass
-                    grid_m[cell_x.x, cell_x.y] += weighted_mass
+                    grid[c_idx].mass += weighted_mass
 
-                    grid_v[cell_x.x, cell_x.y] += weighted_mass * (particle.vel.xy + Q)                
+                    grid[c_idx].vel += weighted_mass * (particle.vel.xy + Q)                
                     momentum = (eq_16_term_0 * weight) @ cell_dist.xy
-                    grid_v[cell_x.x, cell_x.y] += momentum
-
-
-    # for i, j in particles:
-    #     particle = particles[i, j]
-    #     F = particle.F
-        
-    #     # deformation gradient
-    #     J = ti.math.determinant(F)
-    #     volume = particle.volume_0 * J
-        
-    #     # Neo-Hookean model
-    #     F_T = ti.Matrix.transpose(F)
-    #     F_inv_T = ti.math.inverse(F_T)
-    #     F_minus_F_inv_T = F - F_inv_T
-
-    #     P_term_0 = elastic_mu * F_minus_F_inv_T
-    #     P_term_1 = elastic_lambda * ti.math.log(J) * F_inv_T
-    #     P = P_term_0 + P_term_1
-        
-    #     # cauchy stress
-    #     stress = (1.0 / J) * P @ F_T
-    #     # stress = (1.0 / J) * ti.math.dot(P, F_T)
-
-    #     eq_16_term_0 = -volume * 4 * stress * dt
-
-    #     cell_idx = ivec3([int(particle.pos.x), int(particle.pos.y), int(particle.pos.z)])
-    #     cell_diff = (particle.pos - cell_idx) - 0.5
-        
-    #     weights = [0.5 * pow(0.5 - cell_diff, 2), 0.75 - pow(cell_diff, 2), 0.5 * pow(0.5 + cell_diff, 2)]
-
-    #     for gy in ti.static(range(-1, 2)):
-    #         for gx in ti.static(range(-1, 2)):
-    #             weight = weights[gx + 1][0] * weights[gy + 1][1]
-    #             cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, cell_idx.z])
-
-    #             # 구역 벗어나면 particles 값이 고장남
-    #             # 디버깅 항상 키자
-    #             if 0 <= cell_x.x < gridSize and 0 <= cell_x.y < gridSize:
-    #                 cell_dist = (cell_x - particle.pos) + 0.5
-    #                 # cell_dist_xy = vec2([cell_dist.x, cell_dist.y])
-                    
-    #                 Q = particle.C @ cell_dist.xy
-
-    #                 weighted_mass = weight * particle.mass
-    #                 grid_m[cell_x.x, cell_x.y] += weighted_mass
-
-    #                 grid_v[cell_x.x, cell_x.y] += weighted_mass * (particle.vel.xy + Q)                
-    #                 momentum = (eq_16_term_0 * weight) @ cell_dist.xy
-    #                 grid_v[cell_x.x, cell_x.y] += momentum
+                    grid[c_idx].vel += momentum
 
 @ti.func
 def gridUpdate():
-    for x, y in grid_v:
-        if (grid_m[x, y] > 0.0):
-            grid_v[x, y] /= grid_m[x, y]
-            grid_v[x, y] += gravity.xy * dt
+    for i in grid:
+        x = i % grid_res
+        y = i // grid_res
+        
+        if(grid[i].mass > 0.0):
+            grid[i].vel /= grid[i].mass
+            grid[i].vel += gravity.xy * dt
             
-            if x < 2 or x >= gridSize - 2:
-                grid_v[x, y].x = 0.0
-            if y < 2 or y >= gridSize - 2:
-                grid_v[x, y].y = 0.0
+            if x < 2 or x >= grid_res - 2:
+                grid[i].vel.x = 0.0
+            if y < 2 or y >= grid_res - 2:
+                grid[i].vel.y = 0.0 
+         
 
 @ti.func
 def G2P():
@@ -255,11 +183,12 @@ def G2P():
             for gx in ti.static(range(-1, 2)):
                 weight = weights[gx + 1][0] * weights[gy + 1][1]
                 cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, cell_idx.z])
+                
+                c_idx = cell_x.y * grid_res + cell_x.x
 
-
-                if 0 <= cell_x.x < gridSize and 0 <= cell_x.y < gridSize:
+                if 0 <= c_idx < cell_count:
                     cell_dist = (cell_x - particle.pos) + 0.5
-                    weighted_velocity = grid_v[cell_x.x, cell_x.y] * weight
+                    weighted_velocity = grid[c_idx].vel * weight
 
                     term = weighted_velocity.outer_product(cell_dist.xy)
                         
@@ -269,7 +198,7 @@ def G2P():
         
         particle.C = B * 4
         particle.pos += particle.vel * dt
-        particle.pos = clip_vec3(particle.pos, 1, gridSize - 2)
+        particle.pos = clip_vec3(particle.pos, 1, grid_res - 2)
         Fp_new = ti.Matrix.identity(dt=ti.f32, n=2)
         Fp_new += particle.C * dt
         Fp_new = Fp_new @ particle.F
@@ -364,6 +293,7 @@ def initialize_mesh_indices():
             colors[i * n + j] = (1, 0.334, 0.52)
 
 while window.running:
+    
     if current_t < dt:
         # Reset
         init_simulation()
@@ -371,12 +301,7 @@ while window.running:
         initialize_mesh_indices()
 
     simulation()
-    
-    # print("pos:", particles[0, 0].pos, "vel:", particles[0, 0].vel)
-    # print(particles[0, 0].print())
-    
-    # print("step end\n")
-    # break
+       
     current_t += dt
 
     camera.position(32.0, 32.0, 64*2)

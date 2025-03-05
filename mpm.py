@@ -14,7 +14,7 @@ grid_res = 64
 grid_size = 1.0
 num_cells = grid_res * grid_res #4096
  
-n = 1
+n = 5
 particle_count = n * n  
 box_x = 30
 box_y = 30
@@ -52,35 +52,32 @@ grid = Cell.field(shape = num_cells)
 
 weights = ti.Vector.field(3, dtype=ti.f32, shape =(2,))
 
-#prevVel = ti.Vector([0.0, 0.0, 0.0])
-prevVel = ti.Vector.field(3, dtype=ti.f32, shape=(1, ))  
-
+@ti.func
+def Reset_Grid(): 
+    for i in grid:
+        grid[i].mass = 0.0
+        grid[i].v = ti.Vector([0.0, 0.0, 0.0])
+        
+        
 @ti.kernel
 def initialise():  
      
+    Reset_Grid() 
     for i in range(particle_count):
         x = i % n
         y = i // n 
         
-        #particles[i].x = [ (x - n / 2) * grid_size * 2, (y - n / 2) * grid_size * 2, 0]* (ti.random() -0.5) + box_center
         particles[i].x = [ (x - n / 2.0) * grid_size, (y - n / 2.0) * grid_size, 0.0]  + box_center 
-        print(particles[i].x)
-        particles[i].v = [0.0, 0.0, 0.0]
-        particles[i].mass = 3.0 #ti.random()
+        particles[i].v =[ ( ti.random() -0.5)  * 10, ( 1 + ti.random()) + 2, 0.0]
+        particles[i].mass = ti.random() #ti.random()
         particles_radius[i] = 0.2 # ti.random() * 0.1
         particles[i].C = 0.0
-         
-        
-@ti.kernel
-def Simulate():
-
-    for i in range(num_cells):
-        grid[i].mass = 0.0
-        grid[i].v = ti.Vector([0.0, 0.0, 0.0])
-            
-    # P2G (Particle to Grid)
-    for i in range(particle_count): 
-        
+   
+ 
+@ti.func
+def P2G():
+    
+    for i in particles:  
         p = particles[i]  
         
         cell_idx_x = ti.cast(p.x.x, ti.i32)   
@@ -97,97 +94,47 @@ def Simulate():
                 weight = weights[gx + 1][0] * weights[gy + 1][1]
                 cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, 0])
 
-                grid_idx = ti.cast(cell_x.y, ti.i32) * grid_res + ti.cast(cell_x.x, ti.i32)
+                grid_idx = cell_x.y * grid_res + cell_x.x
                 
                 
-                if grid_idx >= 0 and grid_idx < num_cells:
-                                    
+                if 0 <= grid_idx < num_cells: 
                     cell_dist = (cell_x - p.x) + 0.5
                     Q = p.C @ cell_dist.xy
                     
                     weighted_mass = weight * p.mass
                     
-                    cell = grid[grid_idx]
+                    grid[grid_idx].mass += weighted_mass
                     
-                    cell.mass += weighted_mass  
-                    cell.v += weighted_mass * (p.v + ivec3([Q.x, Q.y, 0.0]))   
-                    
-                    grid[grid_idx] = cell           
-                    
-                    
-        # cell_index = cell_idx_y * grid_res + cell_idx_x
-        # if cell_index >= 0 and cell_index < num_cells:
-        #     cell = grid[cell_index]
-        #     cell.v = p.v
-        #     cell.mass = p.mass
-        #     grid[cell_index] = cell  
-        
-        
-        # # Quadratic B-Spline 
-        # weights[0] = 0.5 * pow(0.5 - cell_diff, 2)
-        # weights[1] = 0.75 - pow(cell_diff, 2)
-        # weights[2] = 0.5 * pow(0.5 + cell_diff, 2)
-    
-        # 주변 9개 셀에 대해 질량과 운동량 업데이트   
-        # for gx in (range(3)):
-        #     for gy in (range(3)):
-                 
-        #         weight = weights[gx].x * weights[gy].y 
-        #         cell_x = cell_idx + ti.Vector([gx - 1, gy - 1, 0.0]) 
-                
-        #         if(cell_x.x < 0 or cell_x.x >= grid_res): 
-        #             continue
-                
-        #         if(cell_x.y < 0 or cell_x.y >= grid_res): 
-        #             continue
-                
-        #         cell_dist =  ti.Vector([cell_x.x - p.x.x, cell_x.y - p.x.y]) + ti.Vector([0.5, 0.5]) 
-        #         #cell_dist = ti.Vector([p.x.x - cell_x.x, p.x.y - cell_x.y])
-                
-        #         # m*B(xi - xp)
-        #         Q = p.C @ cell_dist  
-        #         # Weight  * mp
-        #         mass_contrib = weight * p.mass
-        #         total += mass_contrib
-                
-        #         # converting 2D index to 1D 
-        #         cell_index = ti.cast(cell_x.y, ti.i32) * grid_res + ti.cast(cell_x.x, ti.i32)
-        #         cell = grid[cell_index]
-                
-        #         cell.mass += mass_contrib 
-        #         cell.v += mass_contrib * ( p.v + ti.Vector([Q.x, Q.y, 0.0])) 
-        #         #cell.v += mass_contrib * p.v 
-        #         grid[cell_index] = cell
-        
+                    grid[grid_idx].v += weighted_mass * (p.v + ivec3([Q.x, Q.y, 0.0]))
+                    #print(grid[grid_idx].v)
                      
-    #gird velocity update                
-    for i in range(num_cells):
-        cell = grid[i]  
+                    # cell = grid[grid_idx]
+                    
+                    # cell.mass += weighted_mass  
+                    # cell.v += weighted_mass * (p.v + ivec3([Q.x, Q.y, 0.0]))   
+                    
+                    # grid[grid_idx] = cell       
+    
+    
+    
+@ti.func
+def GridUpdate(): 
+    for i in grid:
+        x = i % grid_res
+        y = i // grid_res
         
-        if  cell.mass > 0.0:  
-            # 여러 입자로부터 누적된 velocity이기 때문에
-            # 질량으로 나눠준다. 
+        if(grid[i].mass > 0.0):
+            grid[i].v /= grid[i].mass
+            grid[i].v += gravity.xyz * dt
             
-            cell.v /= cell.mass
-            cell.v += dt * (gravity)
-            
-            #boundary condition 
-            y = i // grid_res
-            x = i % grid_res 
-             
-            if x < left or x > right:
-                cell.v.x = 0.0
-                
-            if y < bottom or y > top:
-                cell.v.y = 0.0
-               
-            grid[i] = cell  
-            
-        cell.v.z = 0.0
-        grid[i] = cell 
-        
+            if x < 2 or x >= grid_res - 2:
+                grid[i].v.x = 0.0
+            if y < 2 or y >= grid_res - 2:
+                grid[i].v.y = 0.0 
          
-    # G2P  
+
+@ti.func
+def G2P():# G2P  
     for i in range( particle_count ):
         
         p = particles[i]
@@ -197,11 +144,7 @@ def Simulate():
         cell_idx_x = ti.cast(p.x.x, ti.i32)   
         cell_idx = ti.Vector([cell_idx_x, cell_idx_y, 0.0])
         
-        cell_diff = (p.x - cell_idx) - 0.5 
-
-        # weights[0] = 0.5 * pow(0.5 - cell_diff, 2.0)
-        # weights[1] = 0.75 - pow(cell_diff, 2.0)
-        # weights[2] = 0.5 * pow(0.5 + cell_diff, 2.0)
+        cell_diff = (p.x - cell_idx) - 0.5  
         weights = [0.5 * pow(0.5 - cell_diff, 2), 0.75 - pow(cell_diff, 2), 0.5 * pow(0.5 + cell_diff, 2)]
        
         B = ti.Matrix.zero(ti.f32, 2, 2)
@@ -236,31 +179,18 @@ def Simulate():
             p.x.z = ti.max(ti.min(p.x.z, 0.0), 0.0)
             
             particles[i] = p
-            
+@ti.kernel
+def Simulate():
+     
+    Reset_Grid()     
+    P2G()   
+    GridUpdate()
+    G2P()    
+    
+    for i in particles:
+        print(particles[i].x)
+     
              
-        # for gx in range(3) :
-        #     for gy in range(3) :
-        #         weight = weights[gx].x * weights[gy].y
-                 
-        #         cell_x = cell_idx + ti.Vector([gx - 1, gy - 1, 0.0]) 
-        #         cell_index = ti.cast(cell_x.y, ti.i32) * grid_res + ti.cast(cell_x.x, ti.i32)
-                
-        #         if cell_index < 0 or cell_index >= num_cells :
-        #             continue 
-                
-        #         dist = (cell_x - p.x) + ti.Vector([0.5, 0.5, 0.0])
-        #         weighted_velocity = grid[cell_index].v * weight
-                 
-        #         # term = ti.Matrix([
-        #         #     [weighted_velocity.x * dist.x, weighted_velocity.x * dist.y], 
-        #         #     [weighted_velocity.y * dist.x, weighted_velocity.y * dist.y],  
-        #         # ]) 
-                
-        #         term = weighted_velocity.xy.outer_product(dist.xy)
-                
-        #         B += term
-        #         p.v += ti.Vector([weighted_velocity.x, weighted_velocity.y, 0.0])
-         
    
 window = ti.ui.Window("MLS-MPM Simulation", (1024, 1024), vsync = True)
 canvas = window.get_canvas() 
@@ -268,8 +198,6 @@ scene = ti.ui.Scene()
 camera = ti.ui.Camera()
               
 
-initialise()
- 
  
 pos = ti.Vector.field(3, dtype=ti.f32, shape =(1,))
 times = 0.0
@@ -278,23 +206,17 @@ times = 0.0
 pos = np.array([31.5, 31.5, 0])  # 초기 위치 (x, y, z)
 vel = np.array([0.0, 0.0, 0.0])  # 초기 속도 (0, 0, 0)
 
+current_t = 0.0
 while window.running: 
     
-    #pos[0] = particles[0].x
-    
+    if current_t < dt:
+        initialise()
+            
     Simulate()
-    times += dt
-    #print("t = ", dt, particles[0].x)
     
-    #print(pos,",", particles[0].x)
-    vel += np.array([0, -9.8, 0]) * dt  # 속도 업데이트 (v = v0 + a*t)
-    pos += vel * dt  # 위치 업데이트 (x = x0 + v*t)
+    current_t += dt
     
-    print(particles[0].x.y - pos[1])
-    
-    
-       
-    
+        
     # routine  
     camera.position(box_center.x, box_center.y, 100) 
     camera.lookat(box_center.x, box_center.y, 0)

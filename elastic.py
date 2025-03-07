@@ -288,10 +288,10 @@ def G2P():
         particle.pos += particle.vel * dt
         particle.pos = clip_vec3(particle.pos, 1, grid_res - 2)
         
-        # Fp_new = ti.Matrix.identity(dt=ti.f32, n=2)
-        # Fp_new += particle.C * dt
-        # Fp_new = Fp_new @ particle.F 
-        # particle.F = Fp_new
+        Fp_new = ti.Matrix.identity(dt=ti.f32, n=2)
+        Fp_new += particle.C * dt
+        Fp_new = Fp_new @ particle.F 
+        particle.F = Fp_new
          
         particles[i].pos = particle.pos
         
@@ -335,6 +335,7 @@ def simulation():
     #P2G()
     P2G_1()
     P2G_2()
+    
     gridUpdate()
     G2P()
     # print("simulation last", particles[0, 0].pos)
@@ -346,8 +347,8 @@ scene = ti.ui.Scene()
 camera = ti.ui.Camera()
 
 # Lame parameters for stress-strain relationship
-elastic_mu = 0.1
-elastic_lambda = 100.0
+elastic_mu = 10
+elastic_lambda = 10.0
 # fake liquid setting
 # elastic_mu = 0.1
 # elastic_lambda = 100.0

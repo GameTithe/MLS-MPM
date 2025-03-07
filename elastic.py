@@ -332,9 +332,9 @@ def clip_vec3(v: vec3, min_val: ti.f32, max_val: ti.f32) -> vec3:
 @ti.kernel
 def simulation():
     ClearGrid()
-    #P2G()
-    P2G_1()
-    P2G_2()
+    P2G()
+    # P2G_1()
+    # P2G_2()
     
     gridUpdate()
     G2P()
@@ -347,8 +347,8 @@ scene = ti.ui.Scene()
 camera = ti.ui.Camera()
 
 # Lame parameters for stress-strain relationship
-elastic_mu = 10
-elastic_lambda = 10.0
+elastic_mu = 20
+elastic_lambda = 4.0
 # fake liquid setting
 # elastic_mu = 0.1
 # elastic_lambda = 100.0

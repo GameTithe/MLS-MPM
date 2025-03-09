@@ -60,7 +60,6 @@ def ClearGrid():
 @ti.kernel
 def init_simulation():
     ClearGrid()
-     
 
     for i in particles: 
         
@@ -73,7 +72,6 @@ def init_simulation():
         particles[i].C = ti.Matrix.zero(dt=ti.f32, n=2, m=2)
         particles[i].F = ti.Matrix.identity(dt=ti.f32, n=2)
          
-    
     P2G()
         
     for i in particles: 
@@ -84,7 +82,6 @@ def init_simulation():
         density = 0.0
         for gy in ti.static(range(-1, 2)):
             for gx in ti.static(range(-1, 2)):
-                
                 weight = weights[gx + 1][0] * weights[gy + 1][1]
                 cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, cell_idx.z])
                 c_idx = cell_x.y * grid_res + cell_x.x
@@ -110,7 +107,7 @@ def P2G():
         volume = particles[i].volume_0 * J
         
         # Neo-Hookean model (MPM course equation 48)
-        # P(Piola kirchoff)를 구하고, F(deformation gradient)를 사용해서..
+        # F(deformation gradient)를 사용해서 P(Piola kirchoff)를 구하고,
         F_T = ti.Matrix.transpose(F)
         F_inv_T = ti.math.inverse(F_T)
         F_minus_F_inv_T = F - F_inv_T
@@ -123,6 +120,7 @@ def P2G():
         # P(piola kirchoff)를 이용해서 응력을 구한다
         stress = (1.0 / J) * P @ F_T
         
+        # inner force 
         eq_16_term_0 = -volume * 4 * stress * dt
         
         cell_idx = ivec3([int(particles[i].pos.x), int(particles[i].pos.y), int(particles[i].pos.z)])
@@ -135,9 +133,7 @@ def P2G():
                 weight = weights[gx + 1][0] * weights[gy + 1][1]
                 cell_x = ivec3([cell_idx.x + gx, cell_idx.y + gy, cell_idx.z])
 
-                c_idx = cell_x.y * grid_res + cell_x.x
-                # 구역 벗어나면 particles 값이 고장남
-                # 디버깅 항상 키자
+                c_idx = cell_x.y * grid_res + cell_x.x  
                 if 0 <= c_idx < cell_count: 
                     cell_dist = (cell_x - particles[i].pos) + 0.5
                      
@@ -206,12 +202,13 @@ def P2G_2():
         
         stress = mat2([-pressure, 0], [0, -pressure])
         
+        # velocity gradient
         dudv = particles[i].C
         strain = dudv
         
         #trace = strain.c1.x + strain.c0.y
-        trace = strain[0, 0] + strain[1,1]
-        strain[1,1] = strain[0,0] = trace
+        trace = strain[0, 1] + strain[1,0]
+        strain[0,1] = strain[1,0] = trace
 
         viscosity_term = dynamic_viscosity * strain
         stress += viscosity_term
@@ -271,7 +268,7 @@ def G2P():
                     weighted_velocity = grid[c_idx].vel * weight
 
                     term = weighted_velocity.outer_product(cell_dist.xy)
-                        
+                    
                     B += term
                     
                     particles[i].vel += vec3(weighted_velocity.x, weighted_velocity.y, 0.0)
